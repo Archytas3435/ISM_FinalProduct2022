@@ -14,7 +14,8 @@ class ReplayBuffer:
         self.rewards = np.empty((self.capacity, 1), dtype=np.float32)
         self.not_dones = np.empty((self.capacity, 1), dtype=np.float32)
         self.not_dones_no_max = np.empty((self.capacity, 1), dtype=np.float32)
-        self.delta_V = np.empty((self.capacity, 1), dtype=np.float32) # change if necessary
+        self.delta_V = np.empty((self.capacity, 1), dtype=np.float32)
+        self.indices = self.delta_V.argpartition(np.arange(0, self.capacity, self.capacity//self.num_quantiles)[1:-1])
         self.idx = 0
         self.full = False
     def __len__(self):
@@ -43,13 +44,13 @@ class ReplayBuffer:
             np.copyto(self.delta_V[n], delta_V)
     def resort(self):
         if self.full:
-            indices = self.delta_V.argpartition(np.arange(0, self.capacity, self.capacity//self.num_quantiles)[1:-1])
-            self.observations = self.observations[indices]
-            self.next_observations = self.next_observations[indices]
-            self.actions = self.actions[indices]
-            self.rewards = self.rewards[indices]
-            self.not_dones = self.not_dones[indices]
-            self.not_dones_no_max = self.not_dones_no_max[indices]
+            self.indices = self.delta_V.argpartition(np.arange(0, self.capacity, self.capacity//self.num_quantiles)[1:-1])
+            # self.observations = self.observations[indices]
+            # self.next_observations = self.next_observations[indices]
+            # self.actions = self.actions[indices]
+            # self.rewards = self.rewards[indices]
+            # self.not_dones = self.not_dones[indices]
+            # self.not_dones_no_max = self.not_dones_no_max[indices]
         else:
             pass
     def revalue(self, QNetwork):
@@ -68,36 +69,30 @@ class ReplayBuffer:
                 self.idx,
                 size=batch_size
             )
-        observations = self.observations[indices]
-        next_observations = self.next_observations[indices]
+        observations = self.observations[self.indices][indices]
+        next_observations = self.next_observations[self.indices][indices]
         observations = random_crop(observations, self.image_pad)
         next_observations = random_crop(next_observations, self.image_pad)
         observations = torch.as_tensor(observations, device=self.device).float()
         next_observations = torch.as_tensor(next_observations, device=self.device).float()
-        actions = torch.as_tensor(self.actions[indices], device=self.device)
-        rewards = torch.as_tensor(self.rewards[indices], device=self.device)
-        not_dones_no_max = torch.as_tensor(self.not_dones_no_max[indices], device=self.device)
+        actions = torch.as_tensor(self.actions[self.indices][indices], device=self.device)
+        rewards = torch.as_tensor(self.rewards[self.indices][indices], device=self.device)
+        not_dones_no_max = torch.as_tensor(self.not_dones_no_max[self.indices][indices], device=self.device)
         return observations, actions, rewards, next_observations, not_dones_no_max
     def sample_by_indices(self, start, end):
         indices = np.arange(start, end)
-        observations = self.observations[indices]
-        next_observations = self.next_observations[indices]
+        observations = self.observations[self.indices][indices]
+        next_observations = self.next_observations[self.indices][indices]
         observations = random_crop(observations, self.image_pad)
         next_observations = random_crop(next_observations, self.image_pad)
         observations = torch.as_tensor(observations, device=self.device).float()
         next_observations = torch.as_tensor(next_observations, device=self.device).float()
-        actions = torch.as_tensor(self.actions[indices], device=self.device)
-        rewards = torch.as_tensor(self.rewards[indices], device=self.device)
-        not_dones_no_max = torch.as_tensor(self.not_dones_no_max[indices], device=self.device)
+        actions = torch.as_tensor(self.actions[self.indices][indices], device=self.device)
+        rewards = torch.as_tensor(self.rewards[self.indices][indices], device=self.device)
+        not_dones_no_max = torch.as_tensor(self.not_dones_no_max[self.indices][indices], device=self.device)
         return observations, actions, rewards, next_observations, not_dones_no_max
 
 def random_crop(images, image_pad, out=84):
-    """
-        args:
-        images: np.array shape (B,C,H,W)
-        out: output size (e.g. 84)
-        returns np.array
-    """
     n, c, h, w = images.shape
     crop_max = h + (image_pad * 2) - out + 1
     w1 = np.random.randint(0, crop_max, n)
