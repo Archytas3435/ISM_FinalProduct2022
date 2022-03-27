@@ -99,7 +99,7 @@ epsilon_schedule = _epsilon_schedule(
 pattern = [[j for j in range(i)] for i in range(1, NUM_QUANTILES+1)]
 pattern = [i for j in pattern for i in j]
 def get_quantile_num(current_ep, total_eps):
-	return pattern[current_ep // total_eps]
+   return pattern[(len(pattern)*current_ep) // (total_eps+1)]
 
 """Learning Loop"""
 total_reward = []
