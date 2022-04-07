@@ -30,9 +30,13 @@ class FrameStack(gym.Wrapper):
     def _get_obs(self):
         assert len(self._frames) == self._k
         return np.concatenate(list(self._frames), axis=0)
+
+
 def soft_update_params(net, target_net, tau):
     for param, target_param in zip(net.parameters(), target_net.parameters()):
         target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+
+
 def _epsilon_schedule(eps_start, eps_end, eps_decay, total_steps):
     eps_decay = (eps_start - eps_end) / total_steps * eps_decay
     def _thunk(steps_done):
