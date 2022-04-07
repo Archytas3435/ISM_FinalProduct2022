@@ -80,6 +80,8 @@ class Quantile:
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=batch_size
         )
+        print(idxs.shape)
+        qqq
         obses = self.obses[idxs]
         next_obses = self.next_obses[idxs]
         # obses_aug = obses.copy()

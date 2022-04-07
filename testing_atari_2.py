@@ -1,7 +1,7 @@
 import gym
 from utils import FrameStack, soft_update_params, _epsilon_schedule
 from gym.wrappers import AtariPreprocessing
-from replay_buffer_2 import ReplayBuffer
+from replay_buffer_tm import ReplayBuffer
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -14,7 +14,6 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 """Making the Environment"""
 env = gym.make("ALE/Breakout-v5", obs_type="rgb", render_mode="rgb_array")
 
-
 MAX_EP_STEPS = env._max_episode_steps
 env = AtariPreprocessing(env, frame_skip=1, terminal_on_life_loss=False, noop_max=30)
 env._max_episode_steps = MAX_EP_STEPS
@@ -23,16 +22,15 @@ obs = env.reset()
 import matplotlib.pyplot as plt
 
 NUM_QUANTILES = 5
-QUANTILE_SIZE = 1000
+QUANTILE_SIZE = 10000
 
 """Initializing the Replay Buffer"""
 replay_buffer = ReplayBuffer(
 	obs.shape,
 	[1],
+	NUM_QUANTILES * QUANTILE_SIZE,
 	4,
 	DEVICE,
-	QUANTILE_SIZE,
-	NUM_QUANTILES
 )
 
 
@@ -50,7 +48,7 @@ class QNetwork(nn.Module):
 			nn.ReLU()
 		)
 
-		self.fc = nn.Linear(3136, n_actions)
+		self.fc = nn.Sequential(nn.Linear(3136, 256), nn.ReLU(), nn.Linear(256, n_actions))
 
 		self.n_actions = n_actions
 		self.gamma = gamma
@@ -58,7 +56,7 @@ class QNetwork(nn.Module):
 
 		self.to(device)
 
-		self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+		self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
 
 	def forward(self, obs):
 		obs = obs / 255.
@@ -83,6 +81,10 @@ class QNetwork(nn.Module):
 
 		self.optimizer.zero_grad()
 		loss.backward()
+
+		for param in self.parameters():
+			param.grad.data.clamp_(-1, 1)
+
 		self.optimizer.step()
 
 	def act(self, obs, epsilon):
@@ -101,8 +103,9 @@ value_function_momentum = QNetwork(4, env.action_space.n, 0.99, DEVICE)
 value_function_momentum.load_state_dict(value_function.state_dict())
 
 """Epsilon Schedule"""
+# Was 0.3
 eps_sched = _epsilon_schedule(
-	0.95, 0.05, 6.5, 25000
+	0.95, 0.05, 1.5, 50000
 )
 
 def _plot_epsilon(eps_sched, total_steps):
@@ -116,8 +119,8 @@ def _plot_epsilon(eps_sched, total_steps):
 """Learning Loop"""
 total_reward = []
 eps_history = []
-N_EPISODES = 1000
-N_SEED_STEPS = 25000
+N_EPISODES = 2000
+N_SEED_STEPS = 50000
 SOFT_UPDATE_FREQ = 5
 BATCH_SIZE = 32
 steps = 0
@@ -146,14 +149,17 @@ for i in tqdm(range(N_EPISODES)):
 
 		steps += 1
 
-		q_num = get_quantile_num(steps, N_SEED_STEPS) # ?
+		# q_num = get_quantile_num(
+		# 	steps,
+		# 	(env._max_episode_steps * N_EPISODES) + N_SEED_STEPS
+		# ) # ?
 
 		if steps >= N_SEED_STEPS:
 			value_function.update(
 				replay_buffer,
 				value_function_momentum,
 				BATCH_SIZE,
-				q_num
+				0
 			)
 			training_steps += 1
 
@@ -164,8 +170,17 @@ for i in tqdm(range(N_EPISODES)):
 
 	total_reward.append(eps_reward)
 
-plt.plot(total_reward)
-plt.show()
+	if i % 100 == 0:
+		print(f'Mean: {np.mean(total_reward[-100:])}, Eps: {eps_sched(training_steps)}, Steps: {steps}')
 
-plt.plot(eps_history)
-plt.show()
+# plt.plot(total_reward)
+# plt.show()
+#
+# plt.plot(eps_history)
+# plt.show()
+
+
+import pickle
+#
+with open(f'./baseline-50k-{np.random.randint(0, 1000)}.data', 'wb') as f:
+	pickle.dump(total_reward, f)
